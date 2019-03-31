@@ -1,0 +1,330 @@
+#include<opencv2/opencv.hpp>
+#include<opencv2/highgui/highgui.hpp>
+#include <opencv2/imgproc.hpp>
+#include<math.h>
+#include<stdio.h>
+#include<iostream>
+#include<vector>
+#include<cmath>
+#define M_PI 3.14159265358979323846
+using namespace cv;
+using namespace std;
+
+Mat forier(Mat src)
+{
+	Mat ext(src.rows * 2, src.cols * 2, CV_8UC1, Scalar(0, 0, 0));
+	Mat shift(src.rows * 2, src.cols * 2, CV_32FC1, Scalar(0, 0, 0));
+	Mat f(src.rows * 2, src.cols * 2, CV_32FC1, Scalar(0, 0, 0));
+	double sum = 0;
+	for (int i = 0; i < src.rows; i++)
+	{
+		for (int j = 0; j < src.cols; j++)
+		{
+			ext.at<uchar>(i, j) = src.at<uchar>(i, j);
+		}
+	}
+
+	for (int i = 0; i < shift.rows; i++)
+	{
+		for (int j = 0; j < shift.cols; j++)
+		{
+			float a = float(ext.at<uchar>(i, j));
+			if ((i + j) % 2 > 0.1) shift.at<float>(i, j) = (-1)*a;
+			if ((i + j) % 2 <= 0.1) shift.at<float>(i, j) = a;
+		}
+	}
+	Mat complexI;
+	Mat planes[] = { shift, Mat::zeros(shift.size(), CV_32F) };
+	merge(planes, 2, complexI);
+	dft(complexI, complexI);
+	return complexI;
+}
+
+Mat iforier(Mat complexI)
+{
+	Mat ifft;
+	Mat src1(complexI.rows / 2, complexI.cols / 2, CV_8UC1);
+	idft(complexI, ifft, DFT_REAL_OUTPUT);
+	for (int i = 0; i < ifft.rows; i++)
+	{
+		for (int j = 0; j < ifft.cols; j++)
+		{
+			float a = float(ifft.at<float>(i, j));
+			if ((i + j) % 2 > 0.1) ifft.at<float>(i, j) = (-1)*a;
+			if ((i + j) % 2 <= 0.1) ifft.at<float>(i, j) = a;
+		}
+	}
+	normalize(ifft, ifft, 0, 255, CV_MINMAX);
+
+	for (int i = 0; i < src1.rows; i++)
+	{
+		for (int j = 0; j < src1.cols; j++)
+		{
+			src1.at<uchar>(i, j) = uchar(ifft.at<float>(i, j));
+		}
+	}
+	return src1;
+}
+
+Mat buttworth(Mat src, int n, int d0, bool flag)
+{
+	Mat but;
+	Mat complex = forier(src);
+	double sum1 = 0, sum2 = 0;
+	if (flag)
+	{
+
+		for (int i = 0; i < complex.rows; i++)
+		{
+			for (int j = 0; j < complex.cols; j++)
+			{
+
+				complex.at<Vec2f>(i, j)[0] = complex.at<Vec2f>(i, j)[0] / (1 + pow(sqrt((i - complex.rows / 2)*(i - complex.rows / 2) + (j - complex.cols / 2)*(j - complex.cols / 2)) / d0, 2 * n));
+				complex.at<Vec2f>(i, j)[1] = complex.at<Vec2f>(i, j)[1] / (1 + pow(sqrt((i - complex.rows / 2)*(i - complex.rows / 2) + (j - complex.cols / 2)*(j - complex.cols / 2)) / d0, 2 * n));
+
+			}
+		}
+		for (int i = 0; i < complex.rows; i++)
+		{
+			for (int j = 0; j < complex.cols; j++)
+			{
+				sum1 += (pow(complex.at<Vec2f>(i, j)[0], 2) + pow(complex.at<Vec2f>(i, j)[1], 2));
+				if (sqrt((i - complex.rows / 2)*(i - complex.rows / 2) + (j - complex.cols / 2)*(j - complex.cols / 2) <= d0))  sum2 += (pow(complex.at<Vec2f>(i, j)[0], 2) + pow(complex.at<Vec2f>(i, j)[1], 2));
+			}
+		}
+		cout << (sum2 / sum1) * 100 << '\n';
+		but = iforier(complex);
+	}
+	else
+	{
+		for (int i = 0; i < complex.rows; i++)
+		{
+			for (int j = 0; j < complex.cols; j++)
+			{
+
+				complex.at<Vec2f>(i, j)[0] = complex.at<Vec2f>(i, j)[0] / (1 + pow(d0 / sqrt((i - complex.rows / 2)*(i - complex.rows / 2) + (j - complex.cols / 2)*(j - complex.cols / 2)), 2 * n));
+				complex.at<Vec2f>(i, j)[1] = complex.at<Vec2f>(i, j)[1] / (1 + pow(d0 / sqrt((i - complex.rows / 2)*(i - complex.rows / 2) + (j - complex.cols / 2)*(j - complex.cols / 2)), 2 * n));
+
+			}
+		}
+
+		for (int i = 0; i < complex.rows; i++)
+		{
+			for (int j = 0; j < complex.cols; j++)
+			{
+				sum1 += sqrt(pow(complex.at<Vec2f>(i, j)[0], 2) + pow(complex.at<Vec2f>(i, j)[1], 2));
+				if (sqrt((i - complex.rows / 2)*(i - complex.rows / 2) + (j - complex.cols / 2)*(j - complex.cols / 2) >= d0))  sum2 += sqrt(pow(complex.at<Vec2f>(i, j)[0], 2) + pow(complex.at<Vec2f>(i, j)[1], 2));
+			}
+		}
+		cout << (sum2 / sum1) * 100 << '\n';
+		but = iforier(complex);
+	}
+	return but;
+}
+
+Mat gaussian(Mat src, float delta, bool flag)
+{
+	Mat complex = forier(src);
+	double sum1 = 0, sum2 = 0;
+	Mat gaus;
+	if (flag)
+	{
+
+		for (int i = 0; i < complex.rows; i++)
+		{
+			for (int j = 0; j < complex.cols; j++)
+			{
+				complex.at<Vec2f>(i, j)[0] = complex.at<Vec2f>(i, j)[0] * exp((-1)*(((i - complex.rows / 2)*(i - complex.rows / 2) + (j - complex.cols / 2)*(j - complex.cols / 2)) / (2 * delta*delta)));
+				complex.at<Vec2f>(i, j)[1] = complex.at<Vec2f>(i, j)[1] * exp((-1)*(((i - complex.rows / 2)*(i - complex.rows / 2) + (j - complex.cols / 2)*(j - complex.cols / 2)) / (2 * delta*delta)));
+
+			}
+		}
+		for (int i = 0; i < complex.rows; i++)
+		{
+			for (int j = 0; j < complex.cols; j++)
+			{
+				sum1 += (pow(complex.at<Vec2f>(i, j)[0], 2) + pow(complex.at<Vec2f>(i, j)[1], 2));
+				if (sqrt((i - complex.rows / 2)*(i - complex.rows / 2) + (j - complex.cols / 2)*(j - complex.cols / 2) <= delta))  sum2 += (pow(complex.at<Vec2f>(i, j)[0], 2) + pow(complex.at<Vec2f>(i, j)[1], 2));
+			}
+		}
+		cout << (sum2 / sum1) * 100 << '\n';
+		gaus = iforier(complex);
+	}
+	else
+	{
+
+		for (int i = 0; i < complex.rows; i++)
+		{
+			for (int j = 0; j < complex.cols; j++)
+			{
+				complex.at<Vec2f>(i, j)[0] = complex.at<Vec2f>(i, j)[0] * (1 - exp((-1)*(((i - complex.rows / 2)*(i - complex.rows / 2) + (j - complex.cols / 2)*(j - complex.cols / 2)) / (2 * delta*delta))));
+				complex.at<Vec2f>(i, j)[1] = complex.at<Vec2f>(i, j)[1] * (1 - exp((-1)*(((i - complex.rows / 2)*(i - complex.rows / 2) + (j - complex.cols / 2)*(j - complex.cols / 2)) / (2 * delta*delta))));
+
+			}
+		}
+		for (int i = 0; i < complex.rows; i++)
+		{
+			for (int j = 0; j < complex.cols; j++)
+			{
+				sum1 += (pow(complex.at<Vec2f>(i, j)[0], 2) + pow(complex.at<Vec2f>(i, j)[1], 2));
+				if (sqrt((i - complex.rows / 2)*(i - complex.rows / 2) + (j - complex.cols / 2)*(j - complex.cols / 2) >=delta))  sum2 += (pow(complex.at<Vec2f>(i, j)[0], 2) + pow(complex.at<Vec2f>(i, j)[1], 2));
+			}
+		}
+		cout << (sum2 / sum1) * 100 << '\n';
+		gaus = iforier(complex);
+	}
+
+	return gaus;
+}
+
+Mat laplace(Mat src)
+{
+	Mat complex = forier(src);
+	Mat copy = complex.clone();
+	Mat H(copy.rows, copy.cols, CV_32FC1);
+	for (int i = 0; i < H.rows; i++)
+	{
+		for (int j = 0; j < H.cols; j++)
+		{
+			H.at<float>(i, j) = 4 * CV_PI*CV_PI*((i - complex.rows / 2)*(i - complex.rows / 2) + (j - complex.cols / 2)*(j - complex.cols / 2));
+		}
+	}
+	normalize(H, H, 0, 1, CV_MINMAX);
+	for (int i = 0; i < complex.rows; i++)
+	{
+		for (int j = 0; j < complex.cols; j++)
+		{
+			complex.at<Vec2f>(i, j)[0] = copy.at<Vec2f>(i, j)[0] * (1 + H.at<float>(i, j));
+			complex.at<Vec2f>(i, j)[1] = copy.at<Vec2f>(i, j)[1] * (1 + H.at<float>(i, j));
+			//cout << H.at<float>(i, j) << '\n';
+		}
+	}
+	Mat lap = iforier(complex);
+	Mat result=lap.clone();
+	return result;
+}
+
+
+Mat usharp(Mat src, float delta, bool flag)
+{
+	Mat complex = forier(src);
+	Mat scomplex = forier(src);
+	Mat unsharp;
+	if (flag)
+	{
+	}
+	else
+	{
+
+		for (int i = 0; i < complex.rows; i++)
+		{
+			for (int j = 0; j < complex.cols; j++)
+			{
+				complex.at<Vec2f>(i, j)[0] = complex.at<Vec2f>(i, j)[0] * exp((-1)*(((i - complex.rows / 2)*(i - complex.rows / 2) + (j - complex.cols / 2)*(j - complex.cols / 2)) / (2 * delta*delta)));
+				complex.at<Vec2f>(i, j)[1] = complex.at<Vec2f>(i, j)[1] * exp((-1)*(((i - complex.rows / 2)*(i - complex.rows / 2) + (j - complex.cols / 2)*(j - complex.cols / 2)) / (2 * delta*delta)));
+				complex.at<Vec2f>(i, j)[0] = 2 * scomplex.at<Vec2f>(i, j)[0] - complex.at<Vec2f>(i, j)[0];
+				complex.at<Vec2f>(i, j)[1] = 2 * scomplex.at<Vec2f>(i, j)[1] - complex.at<Vec2f>(i, j)[1];
+			}
+		}
+		unsharp = iforier(complex);
+	}
+
+	return unsharp;
+}
+
+Mat show(Mat src)
+{
+	Mat complex = forier(src);
+	Mat planes[] = { Mat::zeros(src.size(), CV_32FC1), Mat::zeros(src.size(), CV_32FC1) };
+	split(complex, planes);
+	magnitude(planes[0], planes[1], planes[0]);
+	Mat magI = planes[0];
+	magI += Scalar::all(1);
+	log(magI, magI);
+	normalize(magI, magI, 0, 255, CV_MINMAX);
+	return magI;
+}
+
+int main()
+{
+	Mat src1 = imread("E:\\课件\\图像\\第5次作业\\test1.pgm", IMREAD_GRAYSCALE);
+	Mat src2 = imread("E:\\课件\\图像\\第5次作业\\test2.tif", IMREAD_GRAYSCALE);
+	Mat src3 = imread("E:\\课件\\图像\\第5次作业\\test3.pgm", IMREAD_GRAYSCALE);
+	Mat src4 = imread("E:\\课件\\图像\\第5次作业\\test4.tif", IMREAD_GRAYSCALE);
+	//Mat but120 = buttworth(src1, 2, 20, 1);
+	//Mat but220 = buttworth(src2, 2, 20, 1);
+	//Mat but150 = buttworth(src1, 2, 50, 1);
+	//Mat but250 = buttworth(src2, 2, 50, 1);
+	//Mat gaus120 = gaussian(src1, 20, 1);
+	//Mat gaus220 = gaussian(src2, 20, 1);
+	//Mat gaus150 = gaussian(src1, 50, 1);
+	//Mat gaus250 = gaussian(src2, 50, 1);
+	//Mat butshow120 = show(but120);
+	//Mat butshow220 = show(but220);
+	//Mat butshow150 = show(but150);
+	//Mat butshow250 = show(but250);
+	//Mat gausshow120 = show(gaus120);
+	//Mat gaussshow220 = show(gaus220);
+	//Mat gaussshow150 = show(gaus150);
+	//Mat gaussshow250 = show(gaus250);
+	//imwrite("E:\\课件\\图像\\第5次作业\\结果\\test1b20.bmp", but120);
+	//imwrite("E:\\课件\\图像\\第5次作业\\结果\\test2b20.bmp", but220);
+	//imwrite("E:\\课件\\图像\\第5次作业\\结果\\test1b50.bmp", but150);
+	//imwrite("E:\\课件\\图像\\第5次作业\\结果\\test2b50.bmp", but250);
+	//imwrite("E:\\课件\\图像\\第5次作业\\结果\\test1g20.bmp", gaus120);
+	//imwrite("E:\\课件\\图像\\第5次作业\\结果\\test2g20.bmp", gaus220);
+	//imwrite("E:\\课件\\图像\\第5次作业\\结果\\test1g50.bmp", gaus150);
+	//imwrite("E:\\课件\\图像\\第5次作业\\结果\\test2g50.bmp", gaus250);
+
+
+	//Mat but320 = buttworth(src3, 2, 100, 0);
+	//Mat but420 = buttworth(src4, 2, 100, 0);
+	//Mat but310 = buttworth(src3, 2, 50, 0);
+	//Mat but410 = buttworth(src4, 2, 50, 0);
+	//Mat gaus320 = gaussian(src3, 100, 0);
+	//Mat gaus420 = gaussian(src4, 100, 0);
+	//Mat gaus310 = gaussian(src3, 50, 0);
+	//Mat gaus410 = gaussian(src4, 50, 0);
+	Mat lap3 = laplace(src3);
+	Mat lap4 = laplace(src4);
+
+	//Mat butshow320 = show(but320);
+	//Mat butshow420 = show(but420);
+	//Mat butshow310 = show(but310);
+	//Mat butshow410 = show(but410);
+	//Mat gaussshow320 = show(gaus320);
+	//Mat gaussshow420 = show(gaus420);
+	
+
+	//imwrite("E:\\课件\\图像\\第5次作业\\结果\\test3g20.bmp", gaus320);
+	//imwrite("E:\\课件\\图像\\第5次作业\\结果\\test4g20.bmp", gaus420);
+	//imwrite("E:\\课件\\图像\\第5次作业\\结果\\test3g10.bmp", gaus310);
+	//imwrite("E:\\课件\\图像\\第5次作业\\结果\\test4g10.bmp", gaus410);
+
+	//imwrite("E:\\课件\\图像\\第5次作业\\结果\\test3b20.bmp", but320);
+	//imwrite("E:\\课件\\图像\\第5次作业\\结果\\test4b20.bmp", but420);
+	//imwrite("E:\\课件\\图像\\第5次作业\\结果\\test3b10.bmp", but310);
+	//imwrite("E:\\课件\\图像\\第5次作业\\结果\\test4b10.bmp", but410);
+
+
+	//imwrite("E:\\课件\\图像\\第5次作业\\结果\\hptest3b20.bmp", butshow320);
+	//imwrite("E:\\课件\\图像\\第5次作业\\结果\\hptest4b20.bmp", butshow420);
+	//imwrite("E:\\课件\\图像\\第5次作业\\结果\\hptest3b10.bmp", butshow310);
+	//imwrite("E:\\课件\\图像\\第5次作业\\结果\\hptest4b10.bmp", butshow410);
+	//imwrite("E:\\课件\\图像\\第5次作业\\结果\\hptest3g20.bmp", gaussshow320);
+	//imwrite("E:\\课件\\图像\\第5次作业\\结果\\hptest4g20.bmp", gaussshow420);
+
+
+	imwrite("E:\\课件\\图像\\第5次作业\\结果\\test3lap.bmp", lap3);
+	imwrite("E:\\课件\\图像\\第5次作业\\结果\\test4lap.bmp", lap4);
+	Mat unsharp3 = usharp(src3, 10, 0);
+	Mat unsharp4 = usharp(src4, 10, 0);	
+	Mat psharp3 = show(unsharp3);
+	Mat psharp4 = show(unsharp4);
+	imwrite("E:\\课件\\图像\\第5次作业\\结果\\plap3.bmp", unsharp3);
+	imwrite("E:\\课件\\图像\\第5次作业\\结果\\plap4.bmp", unsharp4);
+	imwrite("E:\\课件\\图像\\第5次作业\\结果\\psharp3.bmp", psharp3);
+	imwrite("E:\\课件\\图像\\第5次作业\\结果\\psharp4.bmp", psharp4);
+	waitKey(0);
+	return 0;
+}
